@@ -1,0 +1,175 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  privyId     String   @unique
+  walletAddress String @unique
+  email       String?
+  firstName   String
+  lastName    String
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  documents   Document[]
+  auditLogs   AuditLog[]
+  permissions Permission[]
+  
+  @@map("users")
+}
+
+model Document {
+  id              String      @id @default(cuid())
+  userId          String
+  type            DocumentType
+  title           String
+  description     String?
+  status          DocumentStatus @default(PENDING)
+  
+  // Off-chain metadata
+  fileHash        String      // IPFS/Arweave hash
+  encryptedData   String?     // Encrypted sensitive data
+  mimeType        String
+  fileSize        Int
+  
+  // Blockchain references
+  attestationId   String?     // SAS attestation ID
+  nftMintAddress  String?     // NFT mint address
+  blockchainType  BlockchainType
+  
+  // Timestamps
+  issuedAt        DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  user            User        @relation(fields: [userId], references: [id])
+  attestation     Attestation? @relation(fields: [attestationId], references: [id])
+  nftRecord       NFTRecord?   @relation(fields: [nftMintAddress], references: [mintAddress])
+  auditLogs       AuditLog[]
+  permissions     Permission[]
+  
+  @@map("documents")
+}
+
+model Attestation {
+  id            String   @id @default(cuid())
+  sasId         String   @unique  // SAS program ID
+  schemaId      String
+  issuerId      String   // Government agency ID
+  holderAddress String   // User's wallet address
+  data          Json     // Attestation data
+  signature     String   // Cryptographic signature
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  
+  documents     Document[]
+  
+  @@map("attestations")
+}
+
+model NFTRecord {
+  id            String   @id @default(cuid())
+  mintAddress   String   @unique
+  ownerAddress  String
+  metadataUri   String   // Arweave URI
+  collectionId  String?
+  attributes    Json     // NFT attributes/traits
+  isTransferable Boolean @default(true)
+  createdAt     DateTime @default(now())
+  
+  documents     Document[]
+  transactions  NFTTransaction[]
+  
+  @@map("nft_records")
+}
+
+model NFTTransaction {
+  id            String   @id @default(cuid())
+  nftMintAddress String
+  fromAddress   String
+  toAddress     String
+  transactionHash String @unique
+  blockNumber   String
+  timestamp     DateTime
+  
+  nftRecord     NFTRecord @relation(fields: [nftMintAddress], references: [mintAddress])
+  
+  @@map("nft_transactions")
+}
+
+model Permission {
+  id         String          @id @default(cuid())
+  userId     String
+  documentId String
+  grantedTo  String          // Wallet address or organization ID
+  accessType PermissionType
+  expiresAt  DateTime?
+  isActive   Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  
+  user       User            @relation(fields: [userId], references: [id])
+  document   Document        @relation(fields: [documentId], references: [id])
+  
+  @@map("permissions")
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  userId     String?
+  documentId String?
+  action     String    // VIEW, SHARE, VERIFY, UPDATE, etc.
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  timestamp  DateTime  @default(now())
+  
+  user       User?     @relation(fields: [userId], references: [id])
+  document   Document? @relation(fields: [documentId], references: [id])
+  
+  @@map("audit_logs")
+}
+
+// Enums
+enum DocumentType {
+  BIRTH_CERTIFICATE
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+  LAND_TITLE
+  PROPERTY_DEED
+  VEHICLE_REGISTRATION
+  PROFESSIONAL_LICENSE
+  ACADEMIC_CERTIFICATE
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum BlockchainType {
+  SAS_ATTESTATION
+  NFT_METAPLEX
+}
+
+enum PermissionType {
+  READ
+  SHARE
+  VERIFY
+}
