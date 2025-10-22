@@ -1,6 +1,8 @@
 # National Digital Document Vault (NDDV)
 
-A secure, blockchain-verified digital vault where citizens can store, verify, and share their official documents using Solana blockchain technology. The system uses Solana Attestation Service (SAS) for identity documents and NFTs for ownership documents, providing cryptographic proof of authenticity and ownership.
+**Secure blockchain-verified document storage and verification system built on Solana**
+
+A digital vault where citizens can store, verify, and share official documents using blockchain technology. Uses Solana Attestation Service (SAS) for identity documents and NFTs for ownership documents, providing cryptographic proof of authenticity and ownership.
 
 ## 🚀 Key Features
 
@@ -247,4 +249,4 @@ For the complete development roadmap, see [implementation_plan.md](./implementat
 
 ---
 
-**Built with ❤️ for secure digital governance**
+Built with ❤️ for secure digital governance
