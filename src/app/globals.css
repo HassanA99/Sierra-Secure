@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Mobile-First Optimizations */
+@media (max-width: 640px) {
+  /* Large buttons for easy touch targeting */
+  button {
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  input, textarea, select {
+    font-size: 16px; /* Prevents zoom on iOS */
+    min-height: 44px;
+  }
+
+  /* Large readable text */
+  body {
+    font-size: 18px;
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  p {
+    font-size: 18px;
+  }
+
+  /* Full-width containers */
+  .container, main {
+    width: 100%;
+    padding: 0 16px;
+    box-sizing: border-box;
+  }
+
+  /* Stack items vertically */
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Hide desktop-only elements */
+  .desktop-only {
+    display: none;
+  }
+}
+
+/* Desktop Optimizations */
+@media (min-width: 1024px) {
+  /* Table-like views for makers */
+  .desktop-table {
+    display: table;
+    width: 100%;
+  }
+
+  .desktop-table-row {
+    display: table-row;
+  }
+
+  .desktop-table-cell {
+    display: table-cell;
+    padding: 12px;
+  }
+
+  /* Multi-column layouts */
+  .desktop-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  /* Keyboard shortcuts help */
+  .keyboard-shortcuts {
+    display: block;
+  }
+}
+

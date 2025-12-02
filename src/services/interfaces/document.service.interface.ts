@@ -1,5 +1,6 @@
 import { Document, CreateDocumentInput, UpdateDocumentInput, Permission, CreatePermissionInput, PermissionType } from '@/types/document.types'
 import { AttestationResult, NFTResult, VerificationResult } from '@/types/blockchain.types'
+import { ForensicReport } from '@/types/forensic.types'
 
 export interface IDocumentService {
   // Core document operations
@@ -25,6 +26,10 @@ export interface IDocumentService {
   validateDocumentAccess(documentId: string, requesterId: string): Promise<boolean>
   encryptDocumentData(data: string, documentId: string): Promise<string>
   decryptDocumentData(encryptedData: string, documentId: string): Promise<string>
+  
+  // Forensic analysis (Gemini AI verification)
+  runForensicAnalysis(documentId: string, userId: string): Promise<ForensicReport>
+  getForensicReport(documentId: string, userId: string): Promise<ForensicReport | null>
   
   // Document lifecycle
   expireDocument(documentId: string, userId: string): Promise<Document>

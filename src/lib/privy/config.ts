@@ -1,29 +1,31 @@
 import { PrivyClientConfig } from "@privy-io/react-auth";
-import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 
 export const privyConfig: PrivyClientConfig = {
-  loginMethods: ["wallet", "email"],
+  // Citizens login with phone + PIN only (no visible crypto)
+  loginMethods: ["phone", "email"],
   appearance: {
     theme: "light",
-    accentColor: "#6A6CF4",
+    accentColor: "#003366", // Government blue
     logo: "https://your-domain.com/logo.png",
-    walletChainType: "ethereum-and-solana",
-    // Prioritize detected Solana wallets and show Solflare explicitly to avoid WC redirect
-    walletList: ["detected_solana_wallets", "solflare", "phantom", "backpack"],
   },
-  // embeddedWallets: {
-  //   createOnLogin: "users-without-wallets",
-  // },
-  // Note: embeddedWallets/solana cluster config shapes vary by version; omit to satisfy current types
-  // Configure external wallets; disable WalletConnect to prevent web redirects, prefer injected extensions
+  // Auto-create embedded wallet for every user - completely transparent
+  embeddedWallets: {
+    createOnLogin: "all-users",
+  },
+  // CRITICAL: Hide all external wallets from citizens
+  // The Solana wallet is managed invisibly via embedded account
   externalWallets: {
     walletConnect: {
       enabled: false,
     },
     solana: {
-      // Avoid auto-connecting loudly; rely on injected extension if present
-      connectors: toSolanaWalletConnectors({ shouldAutoConnect: false }),
+      enabled: false,
     },
+  },
+  // Customize UI to remove crypto language
+  customization: {
+    walletConnectButtonText: undefined, // Remove wallet prompts
+    signatureRequestButtonText: undefined,
   },
 };
 

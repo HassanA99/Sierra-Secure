@@ -11,23 +11,37 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id          String   @id @default(cuid())
-  privyId     String   @unique
-  walletAddress String @unique
-  email       String?
-  firstName   String
-  lastName    String
-  isVerified  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(cuid())
+  privyId          String   @unique
+  walletAddress    String   @unique
+  email            String?
+  firstName        String
+  lastName         String
+  isVerified       Boolean  @default(false)
   
-  documents   Document[]
-  auditLogs   AuditLog[]
-  permissions Permission[]
+  // Phone-based citizen login
+  phoneNumber      String?  @unique
+  phoneVerified    Boolean  @default(false)
   
+  // Biometric deduplication (facial recognition hash from ID)
+  biometricData    Json?    // Raw facial recognition data from Gemini
+  biometricHash    String?  // SHA256 hash for fast duplicate detection
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  documents        Document[]
+  auditLogs        AuditLog[]
+  permissions      Permission[]
+  
+  role             UserRole @default(CITIZEN)
+
+  @@index([phoneNumber])
+  @@index([biometricHash])
   @@map("users")
 }
 
@@ -50,6 +64,11 @@ model Document {
   nftMintAddress  String?     // NFT mint address
   blockchainType  BlockchainType
   
+  // Forensic analysis
+  forensicReportId String?    @unique  // AI forensic analysis report ID
+  forensicScore   Int?        // Overall compliance score 0-100
+  forensicStatus  String?     // PENDING, ANALYZING, APPROVED, REVIEW, REJECTED
+  
   // Timestamps
   issuedAt        DateTime?
   expiresAt       DateTime?
@@ -59,6 +78,7 @@ model Document {
   user            User        @relation(fields: [userId], references: [id])
   attestation     Attestation? @relation(fields: [attestationId], references: [id])
   nftRecord       NFTRecord?   @relation(fields: [nftMintAddress], references: [mintAddress])
+  forensicReport  ForensicAnalysis? @relation("DocumentForensic", fields: [forensicReportId], references: [id], onDelete: Cascade)
   auditLogs       AuditLog[]
   permissions     Permission[]
   
@@ -143,6 +163,60 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model ForensicAnalysis {
+  id                String      @id @default(cuid())
+  documentId        String      @unique
+  analysisId        String      @unique
+  timestamp         DateTime    @default(now())
+  status            String      // ANALYZING, COMPLETED, FAILED
+  
+  // Tamper detection
+  tamperingDetected Boolean     @default(false)
+  tamperRisk        String      @default("NONE") // NONE, LOW, MEDIUM, HIGH, CRITICAL
+  tamperIndicators  Json        @default("[]") // Array of TamperIndicator
+  
+  // OCR Analysis
+  extractedText     String      @default("")
+  ocrConfidence     Float       @default(0) // 0-1
+  ocrLanguage       String      @default("unknown")
+  
+  // Metadata
+  documentQuality   String      @default("FAIR")
+  hasSecurityFeatures Boolean   @default(false)
+  securityFeatures  Json        @default("[]")
+  
+  // Biometric
+  hasFaceImage      Boolean     @default(false)
+  faceConfidence    Float?      // 0-1
+  
+  // Compliance Scoring
+  integrityScore    Int         @default(0) // 0-100
+  authenticityScore Int         @default(0) // 0-100
+  metadataScore     Int         @default(0) // 0-100
+  ocrScore          Int         @default(0) // 0-100
+  biometricScore    Int         @default(0) // 0-100
+  securityScore     Int         @default(0) // 0-100
+  overallScore      Int         @default(0) // 0-100
+  
+  // Recommendation
+  recommendedAction String      @default("REVIEW") // APPROVED, REVIEW, REJECTED
+  blockchainRecommendation String @default("MANUAL_REVIEW") // MINT_SAS, MINT_NFT, MANUAL_REVIEW, REJECT
+  
+  // Findings
+  findings          Json        // { strengths, weaknesses, anomalies, recommendations }
+  
+  // Error handling
+  errors            Json        @default("[]")
+  
+  // AI Model info
+  aiModel           String      @default("gemini-2.0-flash")
+  analysisMethod    String      @default("FULL_SUITE")
+  
+  document          Document?   @relation("DocumentForensic")
+  
+  @@map("forensic_analyses")
+}
+
 // Enums
 enum DocumentType {
   BIRTH_CERTIFICATE
@@ -172,4 +246,10 @@ enum PermissionType {
   READ
   SHARE
   VERIFY
+}
+
+enum UserRole {
+  CITIZEN
+  VERIFIER
+  MAKER
 }
