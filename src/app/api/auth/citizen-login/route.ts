@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { sign } from 'jsonwebtoken'
 import crypto from 'crypto'
+import { verifyOTP } from '@/lib/auth/otp-store'
 
 const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production'
@@ -9,7 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-productio
 /**
  * POST /api/auth/citizen-login
  * 
- * Citizen login via phone number + PIN
+ * Citizen login via email + OTP verification
  * NO VISIBLE CRYPTO - completely hidden
  * 
  * Embedded Privy wallet is created automatically and transparently
@@ -18,44 +19,49 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-productio
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { phoneNumber, pin } = body
+    const { email, otp } = body
 
     // Validate inputs
-    if (!phoneNumber || !pin) {
+    if (!email || !otp) {
       return NextResponse.json(
-        { error: 'Phone number and PIN required' },
+        { error: 'Email and OTP required' },
         { status: 400 }
       )
     }
 
-    // Validate phone format (basic validation)
-    const cleanPhone = phoneNumber.replace(/\D/g, '')
-    if (cleanPhone.length < 10) {
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
       return NextResponse.json(
-        { error: 'Invalid phone number' },
+        { error: 'Invalid email address' },
         { status: 400 }
       )
     }
 
-    if (pin.length < 4 || isNaN(Number(pin))) {
+    if (otp.length !== 6 || isNaN(Number(otp))) {
       return NextResponse.json(
-        { error: 'Invalid PIN' },
+        { error: 'Invalid OTP' },
         { status: 400 }
       )
     }
 
-    // TODO: In production, verify PIN against Privy's authentication backend
-    // For now, we'll accept any PIN >= 4 digits as a placeholder
-    // This should be replaced with actual Privy phone verification
+    // Verify OTP
+    const otpVerification = verifyOTP(email, otp)
+    if (!otpVerification.valid) {
+      return NextResponse.json(
+        { error: otpVerification.error || 'OTP verification failed' },
+        { status: 401 }
+      )
+    }
 
-    // Find or create user with phone number
+    // Find or create user with email
     let user = await prisma.user.findUnique({
-      where: { phoneNumber: cleanPhone },
+      where: { email },
     })
 
     if (!user) {
       // Create new user with auto-generated embedded wallet via Privy
-      // In production, Privy SDK would handle this during phone verification
+      // In production, Privy SDK would handle this during email verification
       const privyId = `privy_${crypto.randomBytes(16).toString('hex')}`
       const walletAddress = `embedded_${crypto.randomBytes(16).toString('hex')}`
 
@@ -63,8 +69,9 @@ export async function POST(request: NextRequest) {
         data: {
           privyId,
           walletAddress,
-          phoneNumber: cleanPhone,
-          phoneVerified: true,
+          email,
+          phoneNumber: null,
+          phoneVerified: false,
           firstName: '', // Will be filled during onboarding
           lastName: '',
           role: 'CITIZEN', // Citizens ALWAYS get CITIZEN role
@@ -72,12 +79,13 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Check if phone is verified
-    if (!user.phoneVerified) {
-      return NextResponse.json(
-        { error: 'Phone not verified' },
-        { status: 403 }
-      )
+    // Check if email is verified (for new users, we'll mark as verified after OTP)
+    if (!user.isVerified) {
+      // Mark as verified after first successful OTP
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { isVerified: true },
+      })
     }
 
     // Generate JWT token for this session
@@ -85,7 +93,6 @@ export async function POST(request: NextRequest) {
       {
         userId: user.id,
         email: user.email,
-        phoneNumber: user.phoneNumber,
         role: user.role,
       },
       JWT_SECRET,
@@ -96,7 +103,7 @@ export async function POST(request: NextRequest) {
       {
         user: {
           id: user.id,
-          phoneNumber: user.phoneNumber,
+          email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role, // Always 'CITIZEN' for citizen login

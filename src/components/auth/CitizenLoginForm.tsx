@@ -6,37 +6,60 @@ import { useRouter } from 'next/navigation'
  * Citizen Login Form - Modern Futuristic UI
  * 
  * Hides all cryptocurrency complexity.
- * Only shows: Phone Number and PIN
+ * Only shows: Email Address and OTP Code
  * 
  * The embedded Privy wallet is created automatically - citizens never see it.
  * No "Connect Wallet" buttons. No "Phantom" or "Solana" references.
  */
 export default function CitizenLoginForm() {
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [pin, setPin] = useState('')
+  const [email, setEmail] = useState('')
+  const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [step, setStep] = useState<'phone' | 'pin'>('phone')
+  const [step, setStep] = useState<'email' | 'otp'>('email')
+  const [otpSent, setOtpSent] = useState(false)
   const router = useRouter()
 
-  const handlePhoneSubmit = (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    setLoading(true)
     
-    if (!phoneNumber || phoneNumber.length < 10) {
-      setError('Please enter a valid phone number')
+    if (!email || !email.includes('@')) {
+      setError('Please enter a valid email address')
+      setLoading(false)
       return
     }
     
-    setStep('pin')
+    try {
+      const res = await fetch('/api/auth/citizen-login/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      const body = await res.json()
+      if (!res.ok) {
+        setError(body?.error || 'Failed to send OTP')
+        setLoading(false)
+        return
+      }
+
+      setOtpSent(true)
+      setStep('otp')
+    } catch (err: any) {
+      setError(err?.message || 'Network error')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handlePinSubmit = async (e: React.FormEvent) => {
+  const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     
-    if (!pin || pin.length < 4) {
-      setError('PIN must be at least 4 digits')
+    if (!otp || otp.length !== 6) {
+      setError('OTP must be 6 digits')
       return
     }
 
@@ -45,14 +68,13 @@ export default function CitizenLoginForm() {
       const res = await fetch('/api/auth/citizen-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber, pin }),
+        body: JSON.stringify({ email, otp }),
       })
 
       const body = await res.json()
       if (!res.ok) {
         setError(body?.error || 'Login failed')
-        setStep('phone')
-        setPin('')
+        setOtp('')
         return
       }
 
@@ -89,17 +111,17 @@ export default function CitizenLoginForm() {
         )}
 
 
-        {/* Phone Entry Step */}
-        {step === 'phone' && (
-          <form onSubmit={handlePhoneSubmit} className="space-y-6 fade-in">
+        {/* Email Entry Step */}
+        {step === 'email' && (
+          <form onSubmit={handleEmailSubmit} className="space-y-6 fade-in">
             <div>
-              <label className="block mb-3">Phone Number</label>
+              <label className="block mb-3">Email Address</label>
               <input
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+1 (555) 123-4567"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
+                placeholder="user@example.com"
                 className="w-full"
               />
             </div>
@@ -107,43 +129,55 @@ export default function CitizenLoginForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn btn-primary"
+              className="w-full btn-primary"
             >
-              {loading ? 'Verifying...' : 'Continue'}
+              {loading ? 'Sending OTP...' : 'Send OTP Code'}
             </button>
           </form>
         )}
 
-        {/* PIN Entry Step */}
-        {step === 'pin' && (
-          <form onSubmit={handlePinSubmit} className="space-y-6 fade-in">
-            <div className="p-4 bg-success-light rounded-lg border-l-4 border-green-500">
-              <span className="text-sm text-success">Verification code sent to {phoneNumber}</span>
+        {/* OTP Entry Step */}
+        {step === 'otp' && (
+          <form onSubmit={handleOtpSubmit} className="space-y-6 fade-in">
+            <div className="bg-blue-50 p-4 rounded-lg mb-4 border-l-4 border-blue-500">
+              <p className="text-sm text-gray-700">
+                We've sent a 6-digit OTP code to <strong>{email}</strong>
+              </p>
             </div>
 
             <div>
-              <label className="block mb-3">Enter PIN</label>
+              <label className="block mb-3">Enter OTP Code</label>
               <input
-                type="password"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                placeholder="••••"
+                type="text"
+                placeholder="000000"
                 maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                 disabled={loading}
                 autoFocus
-                className="w-full text-center text-2xl tracking-widest"
+                className="w-full text-center text-3xl tracking-widest font-mono"
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn btn-primary"
+              className="w-full btn-primary"
             >
-              {loading ? 'Logging in...' : 'Login'}
+              {loading ? 'Verifying...' : 'Verify OTP'}
             </button>
 
             <button
+              type="button"
+              onClick={() => {
+                setStep('email')
+                setOtp('')
+                setOtpSent(false)
+              }}
+              className="w-full btn-secondary"
+            >
+              Back to Email
+            </button>
               type="button"
               onClick={() => {
                 setStep('phone')

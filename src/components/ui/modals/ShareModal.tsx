@@ -200,30 +200,3 @@ export default function ShareModal({
   )
 }
 
-        <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1 rounded border focus:outline-none focus:ring-2" type="button">Cancel</button>
-          <button
-            onClick={async () => {
-              if (!recipientId) return setError('Recipient is required')
-              setError(null)
-              setLoading(true)
-              try {
-                await onShare(recipientId, type, expiresIn ? parseInt(expiresIn) : undefined)
-                onClose()
-              } catch (err: any) {
-                setError(err?.message || 'Share failed')
-              } finally {
-                setLoading(false)
-              }
-            }}
-            disabled={loading}
-            className="px-3 py-1 rounded bg-blue-600 text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
-            type="button"
-          >
-            {loading ? 'Sharing...' : 'Share'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}

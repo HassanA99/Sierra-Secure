@@ -1,3 +1,4 @@
+"use client"
 import React, { useState } from 'react'
 import DocumentUpload from '@/components/dashboard/DocumentUpload'
 import DocumentList from '@/components/dashboard/DocumentList'
