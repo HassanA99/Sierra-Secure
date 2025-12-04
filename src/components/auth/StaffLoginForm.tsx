@@ -3,14 +3,9 @@ import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 /**
- * Staff Login Form (For Verifiers and Makers)
+ * Staff Login Form - Modern Futuristic UI
  * 
- * Government staff can use traditional credentials
- * They need to be provisioned with proper roles by admin
- * 
- * Shows role-based login:
- * - VERIFIER: Views documents for validation
- * - MAKER: Issues new digital documents
+ * Government staff login (Verifiers and Makers)
  */
 export default function StaffLoginForm() {
   const [staffId, setStaffId] = useState('')
@@ -42,14 +37,12 @@ export default function StaffLoginForm() {
         return
       }
 
-      // Store token and user info
       if (typeof window !== 'undefined') {
         localStorage.setItem('nddv_token', body.token)
         if (body.user?.id) localStorage.setItem('nddv_user_id', body.user.id)
         if (body.user?.role) localStorage.setItem('nddv_user_role', body.user.role)
       }
 
-      // Redirect to role-based dashboard
       const role = body.user?.role
       if (role === 'VERIFIER') {
         router.push('/verifier')
@@ -66,76 +59,72 @@ export default function StaffLoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md card fade-in">
         {/* Logo/Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">
-            Government Portal
-          </h1>
-          <p className="text-sm text-gray-600 text-center">
-            Staff Access Only
-          </p>
+        <div className="mb-8 text-center">
+          <h1 className="gradient-text text-4xl font-bold mb-2">NDDV</h1>
+          <div className="neon-line mb-6"></div>
+          <h2 className="text-2xl font-bold mb-2">Government Staff</h2>
+          <span className="text-sm text-gray-400">Secure access for authorized personnel</span>
         </div>
 
-        {/* Information */}
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-700 mb-2 font-semibold">Your Role:</p>
-          <ul className="text-xs text-blue-600 space-y-1">
-            <li><strong>Verifier:</strong> Validate document status</li>
-            <li><strong>Maker:</strong> Issue official documents</li>
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-error-light rounded-lg border-l-4 border-red-500 fade-in">
+            <span className="text-error text-sm">{error}</span>
+          </div>
+        )}
+
+        {/* Role Information */}
+        <div className="mb-6 p-4 bg-success-light rounded-lg">
+          <span className="text-xs text-success font-semibold block mb-2">Your Authorized Roles:</span>
+          <ul className="text-xs text-gray-400 space-y-1">
+            <li>🔍 <strong>Verifier:</strong> Validate document status</li>
+            <li>✍️ <strong>Maker:</strong> Issue official documents</li>
           </ul>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Staff ID
-            </label>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block mb-3">Staff ID</label>
             <input
               type="text"
               value={staffId}
               onChange={(e) => setStaffId(e.target.value)}
-              placeholder="STF-123456"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              placeholder="VER-123456 or MAK-123456"
               disabled={loading}
+              className="w-full"
             />
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+          <div>
+            <label className="block mb-3">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               disabled={loading}
+              className="w-full"
             />
           </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-              {error}
-            </div>
-          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full btn btn-primary"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
         {/* Footer */}
-        <div className="mt-8 pt-6 border-t border-gray-200 text-xs text-gray-600 text-center">
-          <p>Contact your administrator if you don't have credentials</p>
+        <div className="mt-8 pt-6 border-top text-center">
+          <span className="text-xs text-gray-500">Contact your administrator for access</span>
         </div>
       </div>
     </div>
   )
 }
+

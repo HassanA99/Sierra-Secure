@@ -7,49 +7,39 @@ export default function LoginPage() {
   const [userType, setUserType] = useState<'citizen' | 'staff' | null>(null)
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+    <main className="min-h-screen flex items-center justify-center p-4">
       {/* Login Type Selection */}
       {userType === null && (
-        <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 text-center mb-2">
-              Digital Document Vault
-            </h1>
-            <p className="text-sm text-gray-600 text-center">
-              Secure government document management system
-            </p>
+        <div className="w-full max-w-md card fade-in">
+          <div className="mb-8 text-center">
+            <h1 className="gradient-text text-4xl font-bold mb-4">NDDV</h1>
+            <div className="neon-line mb-6"></div>
+            <h2 className="text-2xl font-bold mb-2">National Digital Document Vault</h2>
+            <span className="text-sm text-gray-400">Secure blockchain-verified document management</span>
           </div>
 
           <div className="space-y-4">
             <button
               onClick={() => setUserType('citizen')}
-              className="w-full p-6 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all text-center"
+              className="w-full btn btn-primary p-6 rounded-12 text-center hover:scale-105 transition-transform"
             >
-              <div className="text-2xl mb-2">🏛️</div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                Citizen
-              </h2>
-              <p className="text-sm text-gray-600">
-                Access your personal documents
-              </p>
+              <div className="text-4xl mb-3">🏛️</div>
+              <h3 className="text-lg font-semibold mb-2">Citizen Portal</h3>
+              <span className="text-sm opacity-80">Access your personal documents</span>
             </button>
 
             <button
               onClick={() => setUserType('staff')}
-              className="w-full p-6 border-2 border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-center"
+              className="w-full btn btn-secondary p-6 rounded-12 text-center hover:scale-105 transition-transform"
             >
-              <div className="text-2xl mb-2">👔</div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                Government Staff
-              </h2>
-              <p className="text-sm text-gray-600">
-                Verify or issue documents
-              </p>
+              <div className="text-4xl mb-3">👔</div>
+              <h3 className="text-lg font-semibold mb-2">Government Staff</h3>
+              <span className="text-sm opacity-80">Verify or issue documents</span>
             </button>
           </div>
 
-          <div className="mt-8 pt-6 border-t border-gray-200 text-xs text-gray-600 text-center">
-            <p>All interactions are secure and encrypted</p>
+          <div className="mt-8 pt-6 border-top text-center">
+            <span className="text-xs text-gray-500">All interactions are encrypted and secure</span>
           </div>
         </div>
       )}
@@ -59,9 +49,9 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           <button
             onClick={() => setUserType(null)}
-            className="mb-4 text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
+            className="mb-4 text-primary hover:text-primary-dark text-sm font-medium flex items-center transition-colors"
           >
-            ← Back
+            ← Back to Login Selection
           </button>
           <CitizenLoginForm />
         </div>
@@ -72,9 +62,9 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           <button
             onClick={() => setUserType(null)}
-            className="mb-4 text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
+            className="mb-4 text-primary hover:text-primary-dark text-sm font-medium flex items-center transition-colors"
           >
-            ← Back
+            ← Back to Login Selection
           </button>
           <StaffLoginForm />
         </div>
@@ -82,3 +72,4 @@ export default function LoginPage() {
     </main>
   )
 }
+

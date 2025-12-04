@@ -3,14 +3,13 @@ import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 /**
- * Citizen Login Form
+ * Citizen Login Form - Modern Futuristic UI
  * 
  * Hides all cryptocurrency complexity.
  * Only shows: Phone Number and PIN
  * 
  * The embedded Privy wallet is created automatically - citizens never see it.
  * No "Connect Wallet" buttons. No "Phantom" or "Solana" references.
- * This feels like government app login, not a crypto exchange.
  */
 export default function CitizenLoginForm() {
   const [phoneNumber, setPhoneNumber] = useState('')
@@ -24,7 +23,6 @@ export default function CitizenLoginForm() {
     e.preventDefault()
     setError(null)
     
-    // Basic validation
     if (!phoneNumber || phoneNumber.length < 10) {
       setError('Please enter a valid phone number')
       return
@@ -44,8 +42,6 @@ export default function CitizenLoginForm() {
 
     setLoading(true)
     try {
-      // In production, this would verify against Privy's authentication
-      // For now, we exchange phone + PIN for a session token
       const res = await fetch('/api/auth/citizen-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,7 +56,6 @@ export default function CitizenLoginForm() {
         return
       }
 
-      // Store token and user info - user role is automatically CITIZEN
       if (typeof window !== 'undefined') {
         localStorage.setItem('nddv_token', body.token)
         if (body.user?.id) localStorage.setItem('nddv_user_id', body.user.id)
@@ -76,45 +71,43 @@ export default function CitizenLoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8">
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md card fade-in">
         {/* Logo/Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">
-            Digital Document Vault
-          </h1>
-          <p className="text-sm text-gray-600 text-center">
-            Secure access to your government documents
-          </p>
+        <div className="mb-8 text-center">
+          <h1 className="gradient-text text-4xl font-bold mb-2">NDDV</h1>
+          <div className="neon-line mb-6"></div>
+          <h2 className="text-2xl font-bold mb-2">Citizen Portal</h2>
+          <span className="text-sm text-gray-400">Access your documents securely</span>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-error-light rounded-lg border-l-4 border-red-500 fade-in">
+            <span className="text-error text-sm">{error}</span>
+          </div>
+        )}
+
 
         {/* Phone Entry Step */}
         {step === 'phone' && (
-          <form onSubmit={handlePhoneSubmit}>
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number
-              </label>
+          <form onSubmit={handlePhoneSubmit} className="space-y-6 fade-in">
+            <div>
+              <label className="block mb-3">Phone Number</label>
               <input
                 type="tel"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 placeholder="+1 (555) 123-4567"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 disabled={loading}
+                className="w-full"
               />
             </div>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-                {error}
-              </div>
-            )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full btn btn-primary"
             >
               {loading ? 'Verifying...' : 'Continue'}
             </button>
@@ -123,37 +116,29 @@ export default function CitizenLoginForm() {
 
         {/* PIN Entry Step */}
         {step === 'pin' && (
-          <form onSubmit={handlePinSubmit}>
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg">
-              Code sent to {phoneNumber}
+          <form onSubmit={handlePinSubmit} className="space-y-6 fade-in">
+            <div className="p-4 bg-success-light rounded-lg border-l-4 border-green-500">
+              <span className="text-sm text-success">Verification code sent to {phoneNumber}</span>
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Enter PIN
-              </label>
+            <div>
+              <label className="block mb-3">Enter PIN</label>
               <input
                 type="password"
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                 placeholder="••••"
                 maxLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center text-2xl tracking-widest"
                 disabled={loading}
                 autoFocus
+                className="w-full text-center text-2xl tracking-widest"
               />
             </div>
-
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
-                {error}
-              </div>
-            )}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-3"
+              className="w-full btn btn-primary"
             >
               {loading ? 'Logging in...' : 'Login'}
             </button>
@@ -165,18 +150,19 @@ export default function CitizenLoginForm() {
                 setPin('')
                 setError(null)
               }}
-              className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"
+              className="w-full btn btn-secondary"
             >
               Back
             </button>
           </form>
         )}
 
-        {/* Footer - No crypto language */}
-        <div className="mt-8 pt-6 border-t border-gray-200 text-xs text-gray-600 text-center">
-          <p>Your documents are secured with government-grade encryption</p>
+        {/* Footer */}
+        <div className="mt-8 pt-6 border-top text-center">
+          <span className="text-xs text-gray-500">Government-grade encryption protects your data</span>
         </div>
       </div>
     </div>
   )
 }
+
