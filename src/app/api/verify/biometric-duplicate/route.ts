@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { BiometricDeduplicationService } from '@/services/implementations/biometric-deduplication.service'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 const biometricService = new BiometricDeduplicationService(prisma)
 
 /**

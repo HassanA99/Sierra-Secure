@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 
 /**
  * GET /api/forensic/status/[documentId]
@@ -87,7 +85,7 @@ export async function GET(
       overallScore,
       userMessage,
       blockchainStatus,
-      
+
       // Detailed breakdown for staff view
       breakdown: {
         integrityScore: report.integrityScore,
@@ -97,19 +95,19 @@ export async function GET(
         biometricScore: report.biometricScore,
         securityScore: report.securityScore,
       },
-      
+
       // Tamper detection
       tamperingDetected: report.tamperingDetected,
       tamperRisk: report.tamperRisk,
-      
+
       // OCR
       extractedText: report.extractedText,
       ocrConfidence: report.ocrConfidence,
-      
+
       // Biometric
       hasFaceImage: report.hasFaceImage,
       faceConfidence: report.faceConfidence,
-      
+
       // Timestamp
       analyzedAt: report.timestamp,
     })

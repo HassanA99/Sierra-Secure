@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "next lint",
@@ -12,11 +12,13 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate-deploy": "prisma migrate deploy",
     "prisma:reset": "prisma migrate reset",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "verify:pipeline": "tsx scripts/verify-pipeline.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@prisma/client": "^6.17.1",
+    "@metaplex-foundation/js": "^0.20.1",
+    "@prisma/client": "^6.19.0",
     "@privy-io/react-auth": "^3.3.0",
     "@privy-io/wagmi": "^2.0.1",
     "@scure/base": "^2.0.0",
@@ -27,7 +29,7 @@
     "@solana/web3.js": "^1.98.4",
     "bcryptjs": "^3.0.2",
     "jsonwebtoken": "^9.0.2",
-    "next": "15.5.4",
+    "next": "^15.5.7",
     "prisma": "^6.17.1",
     "react": "19.1.0",
     "react-dom": "19.1.0"

@@ -3,20 +3,21 @@ import React, { useState } from 'react'
 import VerifierDashboard from '@/components/dashboard/VerifierDashboard'
 
 /**
- * Verifier Dashboard
+ * Verifier Dashboard - Web3.5 Document Verification
  * 
- * Bank/Police staff quickly verify document status
+ * NCRA/Police staff quickly verify document status
  * 
  * Features:
  * - Simple ID number or QR code input
- * - Big, clear VALID/INVALID status
- * - Show document details and last verification time
- * - NO BLOCKCHAIN JARGON - just "valid" or "not found"
+ * - Big, clear VALID/INVALID status  
+ * - Show document details and verification history
+ * - Blockchain attestation verification
+ * - NO JARGON - just "Verified" or "Not Found"
  */
 export default function VerifierPage() {
   return (
-    <div className="min-h-screen bg-gray-100">
+    <main className="min-h-screen bg-gradient-to-br from-background via-background-secondary to-background">
       <VerifierDashboard />
-    </div>
+    </main>
   )
 }

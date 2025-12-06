@@ -11,9 +11,7 @@
 import Arweave from 'arweave'
 import { JWKInterface } from 'arweave/node/lib/wallet'
 import crypto from 'crypto'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 
 const ARWEAVE_GATEWAY = process.env.ARWEAVE_GATEWAY_URL || 'https://arweave.net'
 const ARWEAVE_WALLET_KEY = process.env.ARWEAVE_WALLET_KEY

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma/client'
 import { PermissionRepository } from '@/repositories/implementations/permission.repository'
-import { PermissionType } from '@prisma/client'
+import { handleApiError } from '@/utils/error-handler'
+import { successResponse, errorResponse, createdResponse } from '@/utils/api-response'
+import { validateDocumentId, validatePermissionType, validateWalletAddress, validationErrorResponse } from '@/utils/validation'
+import { sanitizeString } from '@/utils/validation'
 
-const prisma = new PrismaClient()
 const permissionRepo = new PermissionRepository(prisma)
 
 /**
@@ -51,39 +53,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    if (document.ownerId !== userId) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      )
+    if (document.userId !== userId) {
+      return errorResponse('Access denied', undefined, 403)
     }
 
     // Get all permissions
-    const permissions = await prisma.permission.findMany({
-      where: { documentId },
-      select: {
-        id: true,
-        recipientId: true,
-        type: true,
-        expiresAt: true,
-        createdAt: true,
-        recipient: {
-          select: {
-            id: true,
-            email: true,
-            displayName: true,
-          },
-        },
-      },
-    })
+    const permissions = await permissionRepo.findByDocumentId(documentId, true)
 
-    return NextResponse.json({ permissions })
-  } catch (error) {
-    console.error('Error getting permissions:', error)
-    return NextResponse.json(
-      { error: 'Failed to get permissions' },
-      { status: 500 }
+    return successResponse(
+      permissions.map((p) => ({
+        id: p.id,
+        documentId: p.documentId,
+        grantedTo: p.grantedTo,
+        accessType: p.accessType,
+        expiresAt: p.expiresAt,
+        isActive: p.isActive,
+        createdAt: p.createdAt,
+      })),
+      'Permissions retrieved successfully'
     )
+  } catch (error) {
+    return handleApiError(error, 'GetPermissions')
   }
 }
 
@@ -106,54 +96,47 @@ async function handleShare(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { documentId, recipientId, type, expiresIn } = body
+    const { documentId, grantedTo, accessType, expiresIn } = body
 
-    if (!documentId || !recipientId || !type) {
-      return NextResponse.json(
-        { error: 'documentId, recipientId, and type required' },
-        { status: 400 }
-      )
+    // Validate inputs
+    const errors: string[] = []
+    if (!documentId) {
+      errors.push('documentId is required')
+    } else if (!validateDocumentId(documentId)) {
+      errors.push('Invalid documentId format')
     }
 
-    // Validate permission type
-    const validTypes = ['READ', 'SHARE', 'VERIFY']
-    if (!validTypes.includes(type)) {
-      return NextResponse.json(
-        { error: `type must be one of: ${validTypes.join(', ')}` },
-        { status: 400 }
-      )
+    if (!grantedTo) {
+      errors.push('grantedTo (wallet address) is required')
+    } else if (!validateWalletAddress(grantedTo)) {
+      errors.push('Invalid wallet address format')
     }
+
+    if (!accessType) {
+      errors.push('accessType is required')
+    } else if (!validatePermissionType(accessType)) {
+      errors.push('Invalid permission type. Must be READ, SHARE, or VERIFY')
+    }
+
+    if (errors.length > 0) {
+      return validationErrorResponse(errors)
+    }
+
+    // Sanitize inputs
+    const sanitizedGrantedTo = sanitizeString(grantedTo)
 
     // Verify user owns document
     const document = await prisma.document.findUnique({
       where: { id: documentId },
+      select: { id: true, userId: true },
     })
 
     if (!document) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+      return errorResponse('Document not found', undefined, 404)
     }
 
-    if (document.ownerId !== userId) {
-      return NextResponse.json(
-        { error: 'Only document owner can share' },
-        { status: 403 }
-      )
-    }
-
-    // Verify recipient exists
-    const recipient = await prisma.user.findUnique({
-      where: { id: recipientId },
-    })
-
-    if (!recipient) {
-      return NextResponse.json({ error: 'Recipient not found' }, { status: 404 })
-    }
-
-    if (recipientId === userId) {
-      return NextResponse.json(
-        { error: 'Cannot share with yourself' },
-        { status: 400 }
-      )
+    if (document.userId !== userId) {
+      return errorResponse('Only document owner can share', undefined, 403)
     }
 
     // Calculate expiration if provided
@@ -161,60 +144,60 @@ async function handleShare(request: NextRequest) {
     if (expiresIn) {
       const now = new Date()
       const expiresInMs = typeof expiresIn === 'number' ? expiresIn : parseInt(expiresIn as string)
+      if (isNaN(expiresInMs) || expiresInMs <= 0) {
+        return validationErrorResponse(['expiresIn must be a positive number'])
+      }
       expiresAt = new Date(now.getTime() + expiresInMs)
     }
 
-    // Create permission
-    const permission = await permissionRepo.create({
-      documentId,
-      recipientId,
-      type: type as PermissionType,
-      expiresAt,
-    })
-
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
+    // Create permission atomically with audit log
+    const permission = await prisma.$transaction(async (tx) => {
+      // Create permission
+      const perm = await permissionRepo.create({
         userId,
-        action: 'SHARE_DOCUMENT',
-        resourceType: 'document',
-        resourceId: documentId,
-        details: {
-          recipientId,
-          permissionType: type,
-          expiresAt: expiresAt?.toISOString(),
+        documentId,
+        grantedTo: sanitizedGrantedTo,
+        accessType: accessType as any,
+        expiresAt,
+      })
+
+      // Create audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          documentId,
+          action: 'SHARE_DOCUMENT',
+          metadata: {
+            grantedTo: sanitizedGrantedTo,
+            accessType,
+            expiresAt: expiresAt?.toISOString(),
+          },
         },
-      },
+      })
+
+      return perm
     })
 
-    return NextResponse.json(
+    return createdResponse(
       {
-        permission: {
-          id: permission.id,
-          documentId: permission.documentId,
-          recipientId: permission.recipientId,
-          type: permission.type,
-          expiresAt: permission.expiresAt,
-          createdAt: permission.createdAt,
-        },
+        id: permission.id,
+        documentId: permission.documentId,
+        grantedTo: permission.grantedTo,
+        accessType: permission.accessType,
+        expiresAt: permission.expiresAt,
+        isActive: permission.isActive,
+        createdAt: permission.createdAt,
       },
-      { status: 201 }
+      'Document shared successfully'
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error('Error sharing document:', error)
 
-    if (message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'Permission already exists for this user and document' },
-        { status: 409 }
-      )
+    if (message.includes('already exists') || message.includes('Unique constraint')) {
+      return errorResponse('Permission already exists for this user and document', undefined, 409)
     }
 
-    return NextResponse.json(
-      { error: 'Failed to share document', message },
-      { status: 500 }
-    )
+    return handleApiError(error, 'ShareDocument')
   }
 }
 
@@ -229,7 +212,7 @@ async function handleRevoke(request: NextRequest) {
     }
 
     const { searchParams } = request.nextUrl
-    const permissionId = searchParams.get('permissionId') || 
+    const permissionId = searchParams.get('permissionId') ||
       (request.method === 'DELETE' ? await getPermissionIdFromBody(request) : null)
 
     if (!permissionId) {
@@ -250,37 +233,32 @@ async function handleRevoke(request: NextRequest) {
     }
 
     // Verify user owns document
-    if (permission.document.ownerId !== userId) {
-      return NextResponse.json(
-        { error: 'Only document owner can revoke' },
-        { status: 403 }
-      )
+    if (permission.document.userId !== userId) {
+      return errorResponse('Only document owner can revoke', undefined, 403)
     }
 
-    // Delete permission
-    await permissionRepo.revoke(permissionId)
+    // Revoke permission atomically with audit log
+    await prisma.$transaction(async (tx) => {
+      // Revoke permission
+      await permissionRepo.revoke(permissionId)
 
-    // Create audit log
-    await prisma.auditLog.create({
-      data: {
-        userId,
-        action: 'REVOKE_PERMISSION',
-        resourceType: 'permission',
-        resourceId: permissionId,
-        details: {
+      // Create audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
           documentId: permission.documentId,
-          recipientId: permission.recipientId,
+          action: 'REVOKE_PERMISSION',
+          metadata: {
+            permissionId,
+            grantedTo: permission.grantedTo,
+          },
         },
-      },
+      })
     })
 
-    return NextResponse.json({ success: true, message: 'Permission revoked' })
+    return successResponse(null, 'Permission revoked successfully')
   } catch (error) {
-    console.error('Error revoking permission:', error)
-    return NextResponse.json(
-      { error: 'Failed to revoke permission' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'RevokePermission')
   }
 }
 

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { CitizenWalletService } from '@/lib/blockchain/citizen-wallet-service'
-
-const prisma = new PrismaClient()
-const citizenWalletService = new CitizenWalletService()
+import { prisma } from '@/lib/prisma/client'
+import { handleApiError, withErrorHandler } from '@/utils/error-handler'
+import { validateWalletAddress, validateDocumentId, validationErrorResponse } from '@/utils/validation'
 
 /**
  * POST /api/documents/[documentId]/share
@@ -25,14 +23,32 @@ export async function POST(
 ) {
   try {
     const { documentId } = params
-    const body = await request.json()
-    const { verifierWallet, accessLevel = 'VERIFY', expiresAt, citizenPrivyId } = body
-
-    if (!verifierWallet || !citizenPrivyId) {
+    
+    // Validate document ID
+    if (!validateDocumentId(documentId)) {
       return NextResponse.json(
-        { error: 'Verifier wallet and citizen ID required' },
+        { error: 'Invalid document ID format' },
         { status: 400 }
       )
+    }
+
+    const body = await request.json()
+    const { grantedTo, accessType = 'VERIFY', expiresAt, userId } = body
+
+    // Validate inputs
+    const errors: string[] = []
+    if (!grantedTo) {
+      errors.push('grantedTo (verifier wallet) is required')
+    } else if (!validateWalletAddress(grantedTo)) {
+      errors.push('Invalid wallet address format')
+    }
+    
+    if (!userId) {
+      errors.push('userId is required')
+    }
+
+    if (errors.length > 0) {
+      return validationErrorResponse(errors)
     }
 
     // Get document
@@ -51,17 +67,33 @@ export async function POST(
     // Get citizen's embedded wallet from Privy
     const citizenWallet = await citizenWalletService.getCitizenEmbeddedWallet(citizenPrivyId)
 
-    // Create permission record (stored in database, not blockchain yet)
-    // In production, this triggers smart contract call
-    const permission = await prisma.permission.create({
-      data: {
-        documentId,
-        recipientId: verifierWallet,
-        accessLevel,
-        createdAt: new Date(),
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        permissionType: 'SHARE',
-      },
+    // Create permission record atomically with transaction
+    const permission = await prisma.$transaction(async (tx) => {
+      // Verify document exists and belongs to user
+      const document = await tx.document.findUnique({
+        where: { id: documentId },
+        select: { id: true, userId: true },
+      })
+
+      if (!document) {
+        throw new Error('Document not found')
+      }
+
+      if (document.userId !== userId) {
+        throw new Error('Unauthorized: User does not own this document')
+      }
+
+      // Create permission
+      return await tx.permission.create({
+        data: {
+          documentId,
+          userId,
+          grantedTo,
+          accessType,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          isActive: true,
+        },
+      })
     })
 
     // In production: Call smart contract
@@ -73,34 +105,24 @@ export async function POST(
     //   expiresAt
     // )
 
-    console.log(`✅ Document shared with verifier`)
-    console.log(`📄 Document: ${documentId}`)
-    console.log(`👤 Verifier: ${verifierWallet}`)
-    console.log(`🔐 Access Level: ${accessLevel}`)
-
     return NextResponse.json({
       success: true,
-      permission: {
-        id: permission.id,
-        documentId,
-        verifier: verifierWallet,
-        accessLevel,
-        createdAt: permission.createdAt,
-        expiresAt: permission.expiresAt,
-        status: 'SHARED',
-        message: 'Document shared with verifier. They can now access it on blockchain.',
+      data: {
+        permission: {
+          id: permission.id,
+          documentId,
+          grantedTo,
+          accessType,
+          createdAt: permission.createdAt,
+          expiresAt: permission.expiresAt,
+          isActive: permission.isActive,
+        },
       },
+      message: 'Document shared successfully',
     }, { status: 201 })
 
   } catch (error) {
-    console.error('Share document error:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to share document',
-        message: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'ShareDocument')
   }
 }
 

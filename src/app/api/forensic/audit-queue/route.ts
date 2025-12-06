@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
+import { handleApiError } from '@/utils/error-handler'
+import { validatePagination, validationErrorResponse } from '@/utils/validation'
 
 /**
  * GET /api/forensic/audit-queue
@@ -28,40 +28,80 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Get pagination parameters
+    const { searchParams } = new URL(request.url)
+    const skip = parseInt(searchParams.get('skip') || '0')
+    const take = parseInt(searchParams.get('take') || '50')
+
+    // Validate pagination
+    const paginationValidation = validatePagination(skip, take)
+    if (!paginationValidation.valid) {
+      return validationErrorResponse(paginationValidation.errors)
+    }
+
     // Get all documents waiting for human review
     // These have forensic scores between 70-84
-    const auditQueue = await prisma.document.findMany({
-      where: {
-        forensicReport: {
-          overallScore: {
-            gte: 70,
-            lte: 84,
+    const [auditQueue, total] = await Promise.all([
+      prisma.document.findMany({
+        where: {
+          forensicReport: {
+            overallScore: {
+              gte: 70,
+              lte: 84,
+            },
+            recommendedAction: 'REVIEW',
           },
-          recommendedAction: 'REVIEW',
+          status: 'PENDING',
         },
-        status: 'PENDING',
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phoneNumber: true,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
+            },
+          },
+          forensicReport: {
+            select: {
+              id: true,
+              overallScore: true,
+              status: true,
+              integrityScore: true,
+              authenticityScore: true,
+              metadataScore: true,
+              ocrScore: true,
+              biometricScore: true,
+              securityScore: true,
+              recommendedAction: true,
+              findings: true,
+            },
           },
         },
-        forensicReport: true,
-      },
-      orderBy: {
-        createdAt: 'asc', // Oldest first
-      },
-      take: 100,
-    })
+        orderBy: {
+          createdAt: 'asc', // Oldest first
+        },
+        take,
+        skip,
+      }),
+      prisma.document.count({
+        where: {
+          forensicReport: {
+            overallScore: {
+              gte: 70,
+              lte: 84,
+            },
+            recommendedAction: 'REVIEW',
+          },
+          status: 'PENDING',
+        },
+      }),
+    ])
 
     return NextResponse.json({
-      count: auditQueue.length,
-      queue: auditQueue.map((doc) => ({
+      data: {
+        queue: auditQueue.map((doc) => ({
         documentId: doc.id,
         type: doc.type,
         title: doc.title,
@@ -85,16 +125,17 @@ export async function GET(request: NextRequest) {
         },
         uploadedAt: doc.createdAt,
       })),
+      },
+      meta: {
+        total,
+        count: auditQueue.length,
+        skip,
+        take,
+        hasMore: skip + take < total,
+      },
     })
   } catch (error) {
-    console.error('Error getting audit queue:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to get audit queue',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'GetAuditQueue')
   }
 }
 
@@ -145,45 +186,45 @@ export async function POST(
       )
     }
 
-    // Update document status
+    // Update document status and log audit trail atomically
     const newStatus = action === 'APPROVE' ? 'VERIFIED' : 'REJECTED'
 
-    const updated = await prisma.document.update({
-      where: { id: params.documentId },
-      data: {
-        status: newStatus,
-      },
-    })
-
-    // Log audit trail
-    await prisma.auditLog.create({
-      data: {
-        userId,
-        documentId: params.documentId,
-        action: action === 'APPROVE' ? 'VERIFIED_BY_MAKER' : 'REJECTED_BY_MAKER',
-        metadata: {
-          makerComments: comments,
-          timestamp: new Date(),
+    const updated = await prisma.$transaction(async (tx) => {
+      // Update document status
+      const doc = await tx.document.update({
+        where: { id: params.documentId },
+        data: {
+          status: newStatus,
         },
-      },
+      })
+
+      // Log audit trail
+      await tx.auditLog.create({
+        data: {
+          userId,
+          documentId: params.documentId,
+          action: action === 'APPROVE' ? 'VERIFIED_BY_MAKER' : 'REJECTED_BY_MAKER',
+          metadata: {
+            makerComments: comments,
+            timestamp: new Date(),
+          },
+        },
+      })
+
+      return doc
     })
 
     return NextResponse.json({
       success: true,
-      message: action === 'APPROVE' ? 'Document approved and written to blockchain' : 'Document rejected',
-      document: {
-        id: updated.id,
-        status: updated.status,
+      data: {
+        document: {
+          id: updated.id,
+          status: updated.status,
+        },
       },
+      message: action === 'APPROVE' ? 'Document approved and written to blockchain' : 'Document rejected',
     })
   } catch (error) {
-    console.error('Error updating audit queue item:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to update document',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'UpdateAuditQueue')
   }
 }

@@ -71,7 +71,7 @@ export default function ShareModal({
         {/* Header */}
         <div className="border-b border-gray-200 p-6">
           <h2 className="text-xl font-bold text-gray-900">
-            Share "{documentTitle}"
+            Share &quot;{documentTitle}&quot;
           </h2>
           <p className="text-sm text-gray-600 mt-1">
             Control what information is shared and for how long
@@ -143,11 +143,10 @@ export default function ShareModal({
                       duration: option.value as ShareSettings['duration'],
                     })
                   }
-                  className={`w-full p-3 border-2 rounded-lg text-left transition-all ${
-                    shareSettings.duration === option.value
+                  className={`w-full p-3 border-2 rounded-lg text-left transition-all ${shareSettings.duration === option.value
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{option.emoji} {option.label}</span>

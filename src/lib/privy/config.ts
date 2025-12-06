@@ -4,6 +4,7 @@ import { PrivyClientConfig } from "@privy-io/react-auth";
  * PRIVY CONFIGURATION FOR WEB3 GOVERNMENT SYSTEM
  * 
  * Key Strategy:
+ * - Citizens login with Email + OTP (Privy handles this)
  * - Auto-create embedded Solana wallets for every citizen
  * - Citizens never see crypto complexity
  * - Government master wallet pays all fees
@@ -11,13 +12,12 @@ import { PrivyClientConfig } from "@privy-io/react-auth";
  */
 
 export const privyConfig: PrivyClientConfig = {
-  // Citizens login with email + OTP (custom auth, not Privy)
-  // Privy only handles embedded wallet creation
+  // EMAIL LOGIN - Privy sends OTP, user enters code
   loginMethods: ["email"],
   
   appearance: {
     theme: "dark",
-    accentColor: "#00d9ff", // Cyan - government digital identity color
+    accentColor: "#14F195", // Solana Teal
     logo: "https://your-domain.com/logo.png",
   },
   
@@ -42,12 +42,6 @@ export const privyConfig: PrivyClientConfig = {
     },
   },
   
-  // Customize UI to hide all crypto terminology
-  customization: {
-    walletConnectButtonText: undefined,
-    signatureRequestButtonText: undefined,
-  },
-  
   // Solana network configuration
   solanaCluster: "devnet", // Use devnet for testing, mainnet for production
   
@@ -56,5 +50,5 @@ export const privyConfig: PrivyClientConfig = {
   // PRIVY_APP_SECRET - Your Privy secret (backend only)
 };
 
-export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID!;
-export const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET!
+export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || 'unknown';
+export const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || 'unknown';

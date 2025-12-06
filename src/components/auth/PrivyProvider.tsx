@@ -34,6 +34,7 @@ function WalletDetectionLogger({ children }: { children: React.ReactNode }) {
 
 export function PrivyProvider({ children }: PrivyProviderProps) {
   const [mounted, setMounted] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -41,6 +42,20 @@ export function PrivyProvider({ children }: PrivyProviderProps) {
 
   if (!mounted) {
     return null
+  }
+
+  // Check if Privy is configured
+  if (!PRIVY_APP_ID || PRIVY_APP_ID === 'undefined') {
+    // Do not render children without the Privy provider - rendering children
+    // without the provider can cause hooks like `usePrivy` to throw.
+    return (
+      <div style={{ padding: '20px', color: '#666', fontSize: '14px' }}>
+        <p>⚠️ Privy not configured. Add `NEXT_PUBLIC_PRIVY_APP_ID` to `.env.local`</p>
+        <p style={{ marginTop: '10px', fontSize: '12px', color: '#999' }}>
+          Get your Privy App ID from: https://console.privy.io
+        </p>
+      </div>
+    )
   }
 
   return (

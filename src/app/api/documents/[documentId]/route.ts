@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma/client'
 import { DocumentService } from '@/services/implementations/document.service'
 import { AIDocumentForensicService } from '@/services/implementations/ai-forensic.service'
+import { handleApiError } from '@/utils/error-handler'
+import { successResponse, errorResponse, noContentResponse } from '@/utils/api-response'
+import { validateDocumentId, validationErrorResponse } from '@/utils/validation'
 
-const prisma = new PrismaClient()
 const documentService = new DocumentService(prisma, new AIDocumentForensicService())
 
 /**
@@ -21,28 +23,20 @@ export async function GET(
     }
 
     const { documentId } = params
+    
     if (!documentId) {
-      return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
+      return validationErrorResponse(['Document ID is required'])
+    }
+
+    if (!validateDocumentId(documentId)) {
+      return validationErrorResponse(['Invalid document ID format'])
     }
 
     const document = await documentService.getDocument(documentId, userId)
 
-    return NextResponse.json(document)
+    return successResponse(document, 'Document retrieved successfully')
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-
-    if (message.includes('not found')) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
-    }
-    if (message.includes('Unauthorized')) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
-    console.error('Error getting document:', error)
-    return NextResponse.json(
-      { error: 'Failed to get document', message },
-      { status: 500 }
-    )
+    return handleApiError(error, 'GetDocument')
   }
 }
 
@@ -61,7 +55,25 @@ export async function PUT(
     }
 
     const { documentId } = params
+    
+    if (!documentId || !validateDocumentId(documentId)) {
+      return validationErrorResponse(['Invalid document ID format'])
+    }
+
     const body = await request.json()
+
+    // Validate status if provided
+    if (body.status && !['PENDING', 'VERIFIED', 'REJECTED', 'EXPIRED'].includes(body.status)) {
+      return validationErrorResponse(['Invalid status value'])
+    }
+
+    // Validate expiresAt if provided
+    if (body.expiresAt) {
+      const expiresAt = new Date(body.expiresAt)
+      if (isNaN(expiresAt.getTime())) {
+        return validationErrorResponse(['Invalid expiresAt date format'])
+      }
+    }
 
     const document = await documentService.updateDocument({
       documentId,
@@ -70,22 +82,9 @@ export async function PUT(
       expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
     })
 
-    return NextResponse.json(document)
+    return successResponse(document, 'Document updated successfully')
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-
-    if (message.includes('not found')) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
-    }
-    if (message.includes('Unauthorized')) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
-    console.error('Error updating document:', error)
-    return NextResponse.json(
-      { error: 'Failed to update document', message },
-      { status: 500 }
-    )
+    return handleApiError(error, 'UpdateDocument')
   }
 }
 
@@ -104,27 +103,15 @@ export async function DELETE(
     }
 
     const { documentId } = params
-    if (!documentId) {
-      return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
+    
+    if (!documentId || !validateDocumentId(documentId)) {
+      return validationErrorResponse(['Invalid document ID format'])
     }
 
     await documentService.deleteDocument(documentId, userId)
 
-    return NextResponse.json({ success: true, message: 'Document deleted' })
+    return noContentResponse()
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-
-    if (message.includes('not found')) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
-    }
-    if (message.includes('Unauthorized')) {
-      return NextResponse.json({ error: 'Access denied' }, { status: 403 })
-    }
-
-    console.error('Error deleting document:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete document', message },
-      { status: 500 }
-    )
+    return handleApiError(error, 'DeleteDocument')
   }
 }

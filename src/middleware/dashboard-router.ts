@@ -8,37 +8,15 @@ import { NextRequest, NextResponse } from 'next/server'
  * - VERIFIER → /verifier (validate documents via QR/ID)
  * - MAKER → /maker (issue documents, human review queue)
  */
+
+// Public routes that don't require authentication
+const PUBLIC_ROUTES = ['/', '/login', '/staff-login', '/register', '/about', '/contact']
+
+// Routes where authenticated users should be redirected to their dashboard
+const AUTH_REDIRECT_ROUTES = ['/', '/login', '/staff-login', '/register']
+
 export function dashboardRouter(request: NextRequest) {
-  const userRole = request.cookies.get('nddv_user_role')?.value
-
-  // If no role, redirect to login
-  if (!userRole) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  const pathname = request.nextUrl.pathname
-
-  // If already on correct dashboard, allow
-  if (
-    (userRole === 'CITIZEN' && pathname.startsWith('/dashboard')) ||
-    (userRole === 'VERIFIER' && pathname.startsWith('/verifier')) ||
-    (userRole === 'MAKER' && pathname.startsWith('/maker'))
-  ) {
-    return NextResponse.next()
-  }
-
-  // Redirect to appropriate dashboard
-  const dashboardMap = {
-    CITIZEN: '/dashboard',
-    VERIFIER: '/verifier',
-    MAKER: '/maker',
-  }
-
-  const redirectTo = dashboardMap[userRole as keyof typeof dashboardMap] || '/dashboard'
-
-  if (pathname === '/dashboard' || pathname === '/verifier' || pathname === '/maker') {
-    return NextResponse.redirect(new URL(redirectTo, request.url))
-  }
-
+  // Middleware logic disabled to prevent conflicts with Privy client-side auth.
+  // Reliance is on client-side protection in Layouts and Pages.
   return NextResponse.next()
 }

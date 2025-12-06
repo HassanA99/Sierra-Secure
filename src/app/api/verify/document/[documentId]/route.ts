@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
+import { handleApiError } from '@/utils/error-handler'
+import { successResponse, errorResponse } from '@/utils/api-response'
+import { validateDocumentId, validationErrorResponse } from '@/utils/validation'
 
 /**
  * GET /api/verify/document/[documentId]
@@ -27,73 +28,94 @@ export async function GET(
       )
     }
 
-    // Find document by ID or document number
-    const document = await prisma.document.findFirst({
-      where: {
-        OR: [
-          { id: documentId },
-          // Could also search by document number if stored in metadata
-        ],
-        status: {
-          in: ['VERIFIED', 'PENDING'],
-        },
-      },
-      include: {
-        user: {
-          select: {
-            phoneNumber: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-    })
-
-    if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found or not verified' },
-        { status: 404 }
-      )
+    // Validate document ID
+    if (!validateDocumentId(documentId)) {
+      return validationErrorResponse(['Invalid document ID format'])
     }
 
-    // Log the verification lookup
-    await prisma.auditLog.create({
-      data: {
-        documentId,
-        action: 'VERIFIED_BY_VERIFIER',
-        metadata: {
-          verifierId: request.headers.get('x-user-id'),
-          timestamp: new Date(),
+    const verifierId = request.headers.get('x-user-id')
+
+    // Find document and log verification atomically
+    const result = await prisma.$transaction(async (tx) => {
+      // Find document by ID
+      const document = await tx.document.findFirst({
+        where: {
+          id: documentId,
+          status: {
+            in: ['VERIFIED', 'PENDING'],
+          },
         },
-      },
+        include: {
+          user: {
+            select: {
+              phoneNumber: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          forensicReport: {
+            select: {
+              overallScore: true,
+              recommendedAction: true,
+              tamperingDetected: true,
+            },
+          },
+        },
+      })
+
+      if (!document) {
+        return null
+      }
+
+      // Log the verification lookup
+      await tx.auditLog.create({
+        data: {
+          userId: verifierId,
+          documentId: document.id,
+          action: 'VERIFIED_BY_VERIFIER',
+          metadata: {
+            verifierId,
+            timestamp: new Date().toISOString(),
+          },
+        },
+      })
+
+      return document
     })
 
-    return NextResponse.json({
-      id: document.id,
-      documentNumber: document.id.substring(0, 12).toUpperCase(), // Use first 12 chars of ID
-      type: document.type,
+    if (!result) {
+      return errorResponse('Document not found or not verified', undefined, 404)
+    }
+
+    return successResponse({
+      id: result.id,
+      documentNumber: result.id.substring(0, 12).toUpperCase(),
+      type: result.type,
+      title: result.title,
       holder: {
-        name: `${document.user.firstName} ${document.user.lastName}`,
-        phoneNumber: document.user.phoneNumber || 'Not on file',
+        name: `${result.user.firstName || ''} ${result.user.lastName || ''}`.trim(),
+        phoneNumber: result.user.phoneNumber || 'Not on file',
+        email: result.user.email || 'Not on file',
       },
-      isValid: document.status === 'VERIFIED',
-      status: document.status,
-      lastVerifiedAt: document.updatedAt,
-      blocklinkId: document.attestationId || document.nftMintAddress,
+      isValid: result.status === 'VERIFIED',
+      status: result.status,
+      lastVerifiedAt: result.updatedAt,
+      blockchainId: result.attestationId || result.nftMintAddress,
+      forensic: result.forensicReport
+        ? {
+            overallScore: result.forensicReport.overallScore,
+            recommendedAction: result.forensicReport.recommendedAction,
+            tamperingDetected: result.forensicReport.tamperingDetected,
+          }
+        : null,
       details: {
-        issuedAt: document.issuedAt,
-        expiresAt: document.expiresAt,
-        description: document.description,
+        issuedAt: result.issuedAt,
+        expiresAt: result.expiresAt,
+        description: result.description,
       },
     })
   } catch (error) {
-    console.error('Error verifying document:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to verify document',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'VerifyDocumentById')
   }
 }

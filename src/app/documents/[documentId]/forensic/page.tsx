@@ -11,8 +11,8 @@ type ForensicApiResponse = {
 }
 
 const ForensicDemoPage: React.FC = () => {
-  // If app router params aren't available in this environment, fallback to manual id
-  const params = (typeof useParams === 'function' ? useParams() : { documentId: undefined }) as { documentId?: string }
+  // Always call useParams at the top level (no conditional calls)
+  const params = useParams() as { documentId?: string }
   const documentId = params?.documentId || 'demo-document-id'
 
   const [report, setReport] = useState<any | null>(null)

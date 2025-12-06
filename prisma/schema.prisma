@@ -16,14 +16,29 @@ datasource db {
 
 model User {
   id               String   @id @default(cuid())
-  privyId          String   @unique
-  walletAddress    String   @unique
-  email            String?
-  firstName        String
-  lastName         String
+  
+  // Web3.5 Authentication (Privy)
+  privyUserId      String?  @unique
+  
+  // Legacy Web2 fields (for government officials)
+  privyId          String?  @unique
+  walletAddress    String?  @unique
+  
+  // Credentials
+  email            String?  @unique
+  firstName        String?
+  lastName         String?
+  
+  // Role & Organization (for government officials)
+  role             UserRole @default(CITIZEN)
+  status           String   @default("ACTIVE") // ACTIVE, SUSPENDED, INACTIVE
+  organization     String?  // Ministry of Lands, NCRA, etc.
+  department       String?  // Digital Land Registry, etc.
+  
+  // Verification
   isVerified       Boolean  @default(false)
   
-  // Phone-based citizen login
+  // Phone-based citizen login (legacy)
   phoneNumber      String?  @unique
   phoneVerified    Boolean  @default(false)
   
@@ -38,10 +53,9 @@ model User {
   auditLogs        AuditLog[]
   permissions      Permission[]
   
-  role             UserRole @default(CITIZEN)
-
   @@index([phoneNumber])
   @@index([biometricHash])
+  @@index([privyUserId])
   @@map("users")
 }
 
@@ -251,5 +265,7 @@ enum PermissionType {
 enum UserRole {
   CITIZEN
   VERIFIER
+  ISSUER
   MAKER
+  ADMIN
 }

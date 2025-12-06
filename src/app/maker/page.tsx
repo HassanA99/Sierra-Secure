@@ -1,6 +1,6 @@
 "use client"
 import React, { useState } from 'react'
-import MakerDashboard from '@/components/dashboard/MakerDashboard'
+import MakerDashboard from '@/components/dashboard/MakerDashboardFixed'
 
 /**
  * Maker Dashboard

@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { SolanaService } from '@/services/implementations/solana.service'
-import { AttestationRepository } from '@/repositories/implementations/attestation.repository'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 const solanaService = new SolanaService()
 const attestationRepo = new AttestationRepository(prisma)
 

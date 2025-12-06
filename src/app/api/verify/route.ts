@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma/client'
 import { AIDocumentForensicService } from '@/services/implementations/ai-forensic.service'
+import { handleApiError } from '@/utils/error-handler'
+import { successResponse, errorResponse, paginatedResponse } from '@/utils/api-response'
+import { validateDocumentId, validatePagination, validationErrorResponse } from '@/utils/validation'
 
-const prisma = new PrismaClient()
 const forensicService = new AIDocumentForensicService()
 
 /**
@@ -48,77 +50,88 @@ async function handleVerifyDocument(request: NextRequest) {
       )
     }
 
+    // Validate document ID
+    if (!validateDocumentId(documentId)) {
+      return errorResponse('Invalid document ID format', undefined, 400)
+    }
+
     // Get document
     const document = await prisma.document.findUnique({
       where: { id: documentId },
       include: {
-        forensicAnalysis: true,
-        permissions: {
-          where: {
-            recipientId: userId || undefined,
-          },
+        forensicReport: true,
+        permissions: userId
+          ? {
+              where: {
+                grantedTo: userId,
+                isActive: true,
+              },
+            }
+          : false,
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
         },
       },
     })
 
     if (!document) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+      return errorResponse('Document not found', undefined, 404)
     }
 
     // Check access: owner or has permission
-    const isOwner = document.ownerId === userId
-    const hasPermission = userId ? document.permissions.length > 0 : false
+    const isOwner = document.userId === userId
+    const hasPermission = userId ? (document.permissions?.length ?? 0) > 0 : false
 
-    if (!isOwner && !hasPermission && !userId) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      )
+    if (!isOwner && !hasPermission && userId) {
+      return errorResponse('Access denied', undefined, 403)
     }
 
     // Return forensic analysis if available
-    const analysis = document.forensicAnalysis?.[0]
+    const analysis = document.forensicReport
 
     if (!analysis) {
-      return NextResponse.json(
+      return successResponse(
         {
           document: {
             id: document.id,
-            fileName: document.fileName,
+            title: document.title,
+            type: document.type,
             status: document.status,
             createdAt: document.createdAt,
           },
           forensic: null,
-          message: 'No forensic analysis available yet',
         },
-        { status: 200 }
+        'No forensic analysis available yet'
       )
     }
 
-    return NextResponse.json({
+    return successResponse({
       document: {
         id: document.id,
-        fileName: document.fileName,
+        title: document.title,
+        type: document.type,
         status: document.status,
         createdAt: document.createdAt,
       },
       forensic: {
-        analysisId: analysis.id,
-        complianceScore: analysis.complianceScore,
+        id: analysis.id,
+        overallScore: analysis.overallScore,
+        integrityScore: analysis.integrityScore,
+        authenticityScore: analysis.authenticityScore,
+        metadataScore: analysis.metadataScore,
+        ocrScore: analysis.ocrScore,
+        biometricScore: analysis.biometricScore,
+        securityScore: analysis.securityScore,
         tamperingDetected: analysis.tamperingDetected,
-        confidenceLevel: analysis.confidenceLevel,
-        ocrResults: analysis.ocrResults,
-        analysis: analysis.analysis,
-        recommendations: analysis.recommendations,
-        analyzedAt: analysis.analyzedAt,
+        tamperRisk: analysis.tamperRisk,
+        recommendedAction: analysis.recommendedAction,
+        blockchainRecommendation: analysis.blockchainRecommendation,
+        findings: analysis.findings,
+        timestamp: analysis.timestamp,
       },
     })
   } catch (error) {
-    console.error('Error verifying document:', error)
-    return NextResponse.json(
-      { error: 'Failed to verify document' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'VerifyDocument')
   }
 }
 
@@ -149,49 +162,70 @@ async function handleBatchVerify(request: NextRequest) {
       )
     }
 
+    // Validate all document IDs
+    const invalidIds = documentIds.filter((id: string) => !validateDocumentId(id))
+    if (invalidIds.length > 0) {
+      return validationErrorResponse([
+        `Invalid document ID format(s): ${invalidIds.join(', ')}`,
+      ])
+    }
+
     // Get documents owned by user
     const documents = await prisma.document.findMany({
       where: {
         id: { in: documentIds },
-        ownerId: userId,
+        userId: userId,
       },
       include: {
-        forensicAnalysis: true,
+        forensicReport: {
+          select: {
+            id: true,
+            overallScore: true,
+            recommendedAction: true,
+            tamperingDetected: true,
+            timestamp: true,
+          },
+        },
       },
     })
 
     if (documents.length === 0) {
-      return NextResponse.json(
-        { error: 'No accessible documents found' },
-        { status: 404 }
-      )
+      return errorResponse('No accessible documents found', undefined, 404)
     }
 
     const results = documents.map((doc) => ({
       documentId: doc.id,
-      fileName: doc.fileName,
+      title: doc.title,
+      type: doc.type,
       status: doc.status,
-      forensic: doc.forensicAnalysis?.[0] || null,
-      verified: !!doc.forensicAnalysis?.[0],
+      forensic: doc.forensicReport
+        ? {
+            id: doc.forensicReport.id,
+            overallScore: doc.forensicReport.overallScore,
+            recommendedAction: doc.forensicReport.recommendedAction,
+            tamperingDetected: doc.forensicReport.tamperingDetected,
+            timestamp: doc.forensicReport.timestamp,
+          }
+        : null,
+      verified: !!doc.forensicReport,
     }))
 
     const verified = results.filter((r) => r.verified).length
     const total = results.length
 
-    return NextResponse.json({
-      summary: {
-        total,
-        verified,
-        pending: total - verified,
+    return successResponse(
+      {
+        summary: {
+          total,
+          verified,
+          pending: total - verified,
+        },
+        results,
       },
-      results,
-    })
-  } catch (error) {
-    console.error('Error batch verifying:', error)
-    return NextResponse.json(
-      { error: 'Failed to batch verify documents' },
-      { status: 500 }
+      `Batch verification completed: ${verified}/${total} documents verified`
     )
+  } catch (error) {
+    return handleApiError(error, 'BatchVerify')
   }
 }
 
@@ -206,48 +240,70 @@ async function handleGetAuditLogs(request: NextRequest) {
     }
 
     const { searchParams } = request.nextUrl
-    const resourceId = searchParams.get('resourceId')
+    const documentId = searchParams.get('documentId')
     const action = searchParams.get('action')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
-    const offset = Math.max(parseInt(searchParams.get('offset') || '0'), 0)
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const offset = parseInt(searchParams.get('offset') || '0')
+
+    // Validate pagination
+    const paginationValidation = validatePagination(offset, limit)
+    if (!paginationValidation.valid) {
+      return validationErrorResponse(paginationValidation.errors)
+    }
 
     // Build query
     const where: any = { userId }
-    if (resourceId) where.resourceId = resourceId
-    if (action) where.action = action
+    if (documentId) {
+      if (!validateDocumentId(documentId)) {
+        return validationErrorResponse(['Invalid documentId format'])
+      }
+      where.documentId = documentId
+    }
+    if (action) {
+      where.action = action
+    }
 
     // Get audit logs
     const [logs, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { timestamp: 'desc' },
         take: limit,
         skip: offset,
+        include: {
+          document: {
+            select: {
+              id: true,
+              title: true,
+              type: true,
+            },
+          },
+        },
       }),
       prisma.auditLog.count({ where }),
     ])
 
-    return NextResponse.json({
-      logs: logs.map((log) => ({
+    return paginatedResponse(
+      logs.map((log) => ({
         id: log.id,
         action: log.action,
-        resourceType: log.resourceType,
-        resourceId: log.resourceId,
-        details: log.details,
-        createdAt: log.createdAt,
+        documentId: log.documentId,
+        document: log.document
+          ? {
+              id: log.document.id,
+              title: log.document.title,
+              type: log.document.type,
+            }
+          : null,
+        metadata: log.metadata,
+        timestamp: log.timestamp,
       })),
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total,
-      },
-    })
-  } catch (error) {
-    console.error('Error getting audit logs:', error)
-    return NextResponse.json(
-      { error: 'Failed to get audit logs' },
-      { status: 500 }
+      total,
+      offset,
+      limit,
+      'Audit logs retrieved successfully'
     )
+  } catch (error) {
+    return handleApiError(error, 'GetAuditLogs')
   }
 }

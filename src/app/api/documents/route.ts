@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@/lib/prisma/client'
 import { DocumentService } from '@/services/implementations/document.service'
 import { AIDocumentForensicService } from '@/services/implementations/ai-forensic.service'
+import { handleApiError } from '@/utils/error-handler'
+import { validatePagination, validateFileUpload, validateDocumentType, validationErrorResponse } from '@/utils/validation'
+import { withTimeout } from '@/utils/error-handler'
 
-/**
- * Document Management API Routes
- * Handles CRUD operations for documents with forensic analysis
- * 
- * Security:
- * - User authentication required (verify Privy token)
- * - User can only access their own documents
- * - Forensic analysis before blockchain issuance
- * - File size validation
- * - MIME type validation
- */
-
-const prisma = new PrismaClient()
 const documentService = new DocumentService(prisma, new AIDocumentForensicService())
 
 /**
@@ -44,11 +34,9 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
 
     // Validate pagination parameters
-    if (skip < 0 || take < 1 || take > 100) {
-      return NextResponse.json(
-        { error: 'Invalid pagination parameters' },
-        { status: 400 }
-      )
+    const paginationValidation = validatePagination(skip, take)
+    if (!paginationValidation.valid) {
+      return validationErrorResponse(paginationValidation.errors)
     }
 
     const response = await documentService.listDocuments(userId, {
@@ -59,14 +47,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error('Error listing documents:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to list documents',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'ListDocuments')
   }
 }
 
@@ -82,58 +63,58 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData()
-    const file = formData.get('file') as File
-    const documentType = formData.get('documentType') as string
-    const title = formData.get('title') as string
+    const file = formData.get('file') as File | null
+    const documentType = formData.get('documentType') as string | null
+    const title = formData.get('title') as string | null
     const blockchainType = formData.get('blockchainType') as string | null
 
     // Validate inputs
-    if (!file || !documentType || !title) {
-      return NextResponse.json(
-        { error: 'file, documentType, and title are required' },
-        { status: 400 }
-      )
+    const errors: string[] = []
+    if (!file) {
+      errors.push('file is required')
+    } else {
+      const fileValidation = validateFileUpload(file)
+      if (!fileValidation.valid) {
+        errors.push(...fileValidation.errors)
+      }
     }
 
-    // Validate file size (max 50MB)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: `File size exceeds maximum of ${MAX_FILE_SIZE / 1024 / 1024}MB` },
-        { status: 400 }
-      )
+    if (!documentType) {
+      errors.push('documentType is required')
+    } else if (!validateDocumentType(documentType)) {
+      errors.push('Invalid document type')
     }
 
-    // Validate MIME type
-    const validMimeTypes = ['image/jpeg', 'image/png', 'application/pdf']
-    if (!validMimeTypes.includes(file.type)) {
-      return NextResponse.json(
-        { error: 'Invalid file type. Supported: JPEG, PNG, PDF' },
-        { status: 400 }
-      )
+    if (!title || title.trim().length === 0) {
+      errors.push('title is required')
+    }
+
+    if (errors.length > 0) {
+      return validationErrorResponse(errors)
     }
 
     // Convert file to buffer
-    const buffer = Buffer.from(await file.arrayBuffer())
+    const buffer = Buffer.from(await file!.arrayBuffer())
 
-    // Create document with forensic analysis
-    const response = await documentService.createDocument({
-      userId,
-      documentType: documentType as any,
-      fileBuffer: buffer,
-      mimeType: file.type,
-      blockchainType: (blockchainType as any) || 'SAS_ATTESTATION',
-    })
-
-    return NextResponse.json(response, { status: 201 })
-  } catch (error) {
-    console.error('Error creating document:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to create document',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
+    // Create document with forensic analysis (with timeout)
+    const response = await withTimeout(
+      documentService.createDocument({
+        userId,
+        documentType: documentType as any,
+        fileBuffer: buffer,
+        mimeType: file!.type,
+        blockchainType: (blockchainType as any) || 'SAS_ATTESTATION',
+      }),
+      300000, // 5 minutes timeout for document creation (includes AI analysis)
+      'Document creation timeout'
     )
+
+    return NextResponse.json({
+      success: true,
+      data: response,
+      message: 'Document created successfully',
+    }, { status: 201 })
+  } catch (error) {
+    return handleApiError(error, 'CreateDocument')
   }
 }

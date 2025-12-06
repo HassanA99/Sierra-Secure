@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
+import { batchApproveDocuments } from '@/utils/batch-operations'
+import { handleApiError } from '@/utils/error-handler'
+import { successResponse, errorResponse, validationErrorResponse } from '@/utils/api-response'
+import { validateDocumentId } from '@/utils/validation'
 
 /**
  * POST /api/forensic/audit-batch
@@ -50,96 +52,79 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate each action
+    const errors: string[] = []
     for (const action of actions) {
       if (!action.documentId || !action.action) {
-        return NextResponse.json(
-          { error: 'Each action requires documentId and action' },
-          { status: 400 }
-        )
+        errors.push('Each action requires documentId and action')
+        continue
+      }
+      if (!validateDocumentId(action.documentId)) {
+        errors.push(`Invalid documentId format: ${action.documentId}`)
+        continue
       }
       if (!['APPROVE', 'REJECT'].includes(action.action)) {
-        return NextResponse.json(
-          { error: `Invalid action "${action.action}". Must be APPROVE or REJECT` },
-          { status: 400 }
+        errors.push(`Invalid action "${action.action}". Must be APPROVE or REJECT`)
+      }
+    }
+
+    if (errors.length > 0) {
+      return validationErrorResponse(errors)
+    }
+
+    // Group actions by type for batch processing
+    const approveActions = actions.filter((a: any) => a.action === 'APPROVE')
+    const rejectActions = actions.filter((a: any) => a.action === 'REJECT')
+
+    // Process approvals
+    const approveResults = approveActions.length > 0
+      ? await batchApproveDocuments(
+          approveActions.map((a: any) => a.documentId),
+          'APPROVE',
+          userId,
+          approveActions[0]?.comments
         )
-      }
-    }
+      : { success: true, processed: 0, succeeded: 0, failed: 0, results: [] }
 
-    // Process batch
-    const results = []
-    const errors = []
+    // Process rejections
+    const rejectResults = rejectActions.length > 0
+      ? await batchApproveDocuments(
+          rejectActions.map((a: any) => a.documentId),
+          'REJECT',
+          userId,
+          rejectActions[0]?.comments
+        )
+      : { success: true, processed: 0, succeeded: 0, failed: 0, results: [] }
 
-    for (const action of actions) {
-      try {
-        const document = await prisma.document.findUnique({
-          where: { id: action.documentId },
-        })
+    const totalProcessed = approveResults.processed + rejectResults.processed
+    const totalSucceeded = approveResults.succeeded + rejectResults.succeeded
+    const totalFailed = approveResults.failed + rejectResults.failed
 
-        if (!document) {
-          errors.push({
-            documentId: action.documentId,
-            error: 'Document not found',
-          })
-          continue
-        }
-
-        const newStatus = action.action === 'APPROVE' ? 'VERIFIED' : 'REJECTED'
-
-        const updated = await prisma.document.update({
-          where: { id: action.documentId },
-          data: {
-            status: newStatus,
-          },
-        })
-
-        // Log audit trail
-        await prisma.auditLog.create({
-          data: {
-            userId,
-            documentId: action.documentId,
-            action:
-              action.action === 'APPROVE' ? 'VERIFIED_BY_MAKER' : 'REJECTED_BY_MAKER',
-            metadata: {
-              makerComments: action.comments || '',
-              timestamp: new Date(),
-            },
-          },
-        })
-
-        results.push({
-          documentId: action.documentId,
-          status: newStatus,
-          action: action.action,
-        })
-      } catch (err) {
-        errors.push({
-          documentId: action.documentId,
-          error: err instanceof Error ? err.message : 'Processing failed',
-        })
-      }
-    }
-
-    return NextResponse.json(
+    return successResponse(
       {
-        success: true,
         summary: {
           total: actions.length,
-          processed: results.length,
-          failed: errors.length,
+          processed: totalProcessed,
+          succeeded: totalSucceeded,
+          failed: totalFailed,
         },
-        results,
-        errors: errors.length > 0 ? errors : undefined,
+        results: [
+          ...approveResults.results.map((r) => ({
+            documentId: r.item,
+            action: 'APPROVE' as const,
+            success: r.success,
+            error: r.error,
+          })),
+          ...rejectResults.results.map((r) => ({
+            documentId: r.item,
+            action: 'REJECT' as const,
+            success: r.success,
+            error: r.error,
+          })),
+        ],
       },
-      { status: 200 }
+      `Batch processed: ${totalSucceeded} succeeded, ${totalFailed} failed`
     )
   } catch (error) {
-    console.error('Error batch approving/rejecting documents:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to process batch',
-        message: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return handleApiError(error, 'BatchAudit')
   }
 }

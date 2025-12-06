@@ -1,123 +1,101 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { sign } from 'jsonwebtoken'
-import crypto from 'crypto'
-import { verifyOTP } from '@/lib/auth/otp-store'
-
-const prisma = new PrismaClient()
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production'
+import { generateToken } from '@/lib/auth/jwt'
+import { authService } from '@/services/implementations/auth.service'
 
 /**
+ * CITIZEN LOGIN ENDPOINT - Web3.5 Privy Authentication
+ * 
  * POST /api/auth/citizen-login
+ * Body: { privyUserId: string, walletAddress: string }
  * 
- * Citizen login via email + OTP verification
- * NO VISIBLE CRYPTO - completely hidden
- * 
- * Embedded Privy wallet is created automatically and transparently
- * User never sees "Connect Wallet," "Phantom," or "Solana"
+ * Process:
+ * 1. Citizen logs in with Privy wallet (embedded Solana)
+ * 2. Frontend sends privyUserId to this endpoint
+ * 3. Backend creates/finds citizen user record via AuthService
+ * 4. Backend returns JWT token + user data
+ * 5. Frontend stores token and redirects to dashboard
  */
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, otp } = body
+    const { privyUserId, walletAddress, email, firstName, lastName } = body
 
-    // Validate inputs
-    if (!email || !otp) {
+    if (!privyUserId) {
       return NextResponse.json(
-        { error: 'Email and OTP required' },
+        { error: 'Missing Privy user ID' },
         { status: 400 }
       )
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: 'Invalid email address' },
-        { status: 400 }
-      )
-    }
+    // Default wallet if missing (backwards compatibility or initial provision)
+    // Expert Note: Ideally frontend MUST send this.
+    const effectiveWallet = walletAddress || `embedded_${privyUserId.substring(0, 16).toLowerCase()}`
 
-    if (otp.length !== 6 || isNaN(Number(otp))) {
-      return NextResponse.json(
-        { error: 'Invalid OTP' },
-        { status: 400 }
-      )
-    }
+    // Use Centralized Auth Service
+    const result = await authService.loginWithPrivy(
+      privyUserId,
+      effectiveWallet,
+      { email, firstName, lastName }
+    )
 
-    // Verify OTP
-    const otpVerification = verifyOTP(email, otp)
-    if (!otpVerification.valid) {
+    if (!result.success || !result.user) {
       return NextResponse.json(
-        { error: otpVerification.error || 'OTP verification failed' },
+        { error: result.message || 'Login failed' },
         { status: 401 }
       )
     }
 
-    // Find or create user with email
-    let user = await prisma.user.findUnique({
-      where: { email },
+    // Sanitize user object before returning to the client to avoid
+    // accidentally sending nested objects (e.g. { address }) which can
+    // cause React to attempt to render objects as children.
+    const userObj = result.user
+    const sanitizedUser = {
+      id: userObj.id,
+      email: typeof userObj.email === 'string' ? userObj.email : (userObj.email?.address || ''),
+      firstName: userObj.firstName || '',
+      lastName: userObj.lastName || '',
+      walletAddress: userObj.walletAddress || userObj.wallet?.address || null,
+      role: 'CITIZEN',
+    }
+
+    // Generate JWT token
+    const token = generateToken({
+      userId: sanitizedUser.id,
+      privyUserId: result.user.privyId,
+      role: 'CITIZEN', // Enforce citizen role for this endpoint
     })
 
-    if (!user) {
-      // Create new user with auto-generated embedded wallet via Privy
-      // In production, Privy SDK would handle this during email verification
-      const privyId = `privy_${crypto.randomBytes(16).toString('hex')}`
-      const walletAddress = `embedded_${crypto.randomBytes(16).toString('hex')}`
-
-      user = await prisma.user.create({
-        data: {
-          privyId,
-          walletAddress,
-          email,
-          phoneNumber: null,
-          phoneVerified: false,
-          firstName: '', // Will be filled during onboarding
-          lastName: '',
-          role: 'CITIZEN', // Citizens ALWAYS get CITIZEN role
-        },
-      })
-    }
-
-    // Check if email is verified (for new users, we'll mark as verified after OTP)
-    if (!user.isVerified) {
-      // Mark as verified after first successful OTP
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { isVerified: true },
-      })
-    }
-
-    // Generate JWT token for this session
-    const token = sign(
+    const response = NextResponse.json(
       {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    )
-
-    return NextResponse.json(
-      {
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role, // Always 'CITIZEN' for citizen login
-        },
         token,
+        user: sanitizedUser,
       },
       { status: 200 }
     )
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error('Citizen login error:', error)
 
+    // Set cookies for middleware
+    response.cookies.set('nddv_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 1 day
+    })
+
+    response.cookies.set('nddv_user_role', 'CITIZEN', {
+      httpOnly: false, // Allow client-side access if needed, but mainly for middleware
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 1 day
+    })
+
+    return response
+  } catch (error) {
+    console.error('[❌ Citizen Login Error]', error)
     return NextResponse.json(
-      { error: 'Login failed', message },
+      { error: 'Login failed', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }

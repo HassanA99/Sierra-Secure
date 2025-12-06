@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { sign } from 'jsonwebtoken'
-import crypto from 'crypto'
-
-const prisma = new PrismaClient()
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production'
+import { authService } from '@/services/implementations/auth.service'
+import { generateToken } from '@/lib/auth/jwt'
 
 /**
  * POST /api/auth/staff-login
@@ -20,90 +16,49 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { staffId, password } = body
 
-    // Validate inputs
-    if (!staffId || !password) {
-      return NextResponse.json(
-        { error: 'Staff ID and password required' },
-        { status: 400 }
-      )
-    }
+    const result = await authService.loginStaff(staffId, password)
 
-    // TODO: In production, verify against Active Directory or LDAP
-    // For development, accept any valid staffId with password
-    if (password.length < 6) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      )
-    }
-
-    // Find staff user by Privy ID (in production, staffId would be from auth system)
-    let user = await prisma.user.findFirst({
-      where: {
-        privyId: staffId,
-      },
-    })
-
-    if (!user) {
-      // Create staff account if it doesn't exist (in production, this would be admin-provisioned)
-      // For now, allow creation with proper role detection
-      const role = detectStaffRole(staffId)
-
-      if (!role) {
-        return NextResponse.json(
-          { error: 'Invalid staff ID' },
-          { status: 401 }
-        )
-      }
-
-      const walletAddress = `embedded_${crypto.randomBytes(16).toString('hex')}`
-      const [firstName, lastName] = staffId.split('-')[0].split('_')
-
-      user = await prisma.user.create({
-        data: {
-          privyId: staffId,
-          walletAddress,
-          firstName: firstName || 'Staff',
-          lastName: lastName || 'Member',
-          isVerified: true,
-          role, // VERIFIER or MAKER
-        },
-      })
-    }
-
-    // Verify user has a staff role
-    if (user.role === 'CITIZEN') {
-      return NextResponse.json(
-        { error: 'Citizen accounts cannot access staff portal' },
-        { status: 403 }
-      )
+    if (!result.success || !result.user) {
+      return NextResponse.json({ error: result.message }, { status: 401 })
     }
 
     // Generate JWT token
-    const token = sign(
-      {
-        userId: user.id,
-        email: user.email,
-        staffId,
-        role: user.role,
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    )
+    const token = generateToken({
+      userId: result.user.id,
+      email: result.user.email || '',
+      privyUserId: staffId,
+      role: result.user.role || '',
+    })
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         user: {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          role: user.role, // VERIFIER or MAKER
-          staffId,
+          ...result.user,
+          staffId // Return staffId for consistency with frontend expectations
         },
         token,
       },
       { status: 200 }
     )
+
+    // Set cookies for middleware
+    response.cookies.set('nddv_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 1 day
+    })
+
+    response.cookies.set('nddv_user_role', result.user.role || '', {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24, // 1 day
+    })
+
+    return response
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error('Staff login error:', error)
@@ -115,13 +70,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Detect staff role from staff ID
- * In production, this would come from Active Directory
- */
-function detectStaffRole(staffId: string): 'VERIFIER' | 'MAKER' | null {
-  // Example: "VER-123456" = Verifier, "MAK-123456" = Maker
-  if (staffId.startsWith('VER-')) return 'VERIFIER'
-  if (staffId.startsWith('MAK-')) return 'MAKER'
-  return null
-}

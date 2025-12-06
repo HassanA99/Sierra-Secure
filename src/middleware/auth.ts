@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verify } from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production'
+// Validate JWT secret is set
+const JWT_SECRET = process.env.JWT_SECRET
+if (!JWT_SECRET || JWT_SECRET === 'dev-secret-key-change-in-production') {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET must be set in production environment')
+  }
+  console.warn('⚠️  Using default JWT_SECRET. Set JWT_SECRET environment variable for production.')
+}
+
+const JWT_SECRET_FINAL = JWT_SECRET || 'dev-secret-key-change-in-production'
 
 /**
  * Authentication middleware for protected API routes
@@ -26,7 +35,7 @@ export function withAuth(handler: (request: NextRequest) => Promise<NextResponse
       }
 
       // Verify and decode token
-      const decoded = verify(token, JWT_SECRET) as { userId: string; email?: string }
+      const decoded = verify(token, JWT_SECRET_FINAL) as { userId: string; email?: string }
 
       if (!decoded.userId) {
         return NextResponse.json(
@@ -87,7 +96,7 @@ export function withOptionalAuth(handler: (request: NextRequest) => Promise<Next
       }
 
       if (token) {
-        const decoded = verify(token, JWT_SECRET) as { userId: string; email?: string }
+        const decoded = verify(token, JWT_SECRET_FINAL) as { userId: string; email?: string }
 
         if (decoded.userId) {
           const newHeaders = new Headers(request.headers)

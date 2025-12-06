@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { documentIntelligence } from '@/lib/ai/document-intelligence-service'
 import { getGovernmentWalletService } from '@/lib/blockchain/government-wallet-service'
-import { nftMintingService } from '@/lib/blockchain/nft-minting-service'
-import { sasAttestationService } from '@/lib/blockchain/sas-attestation-service'
+import { solanaService } from '@/services/implementations/solana.service'
 import { arweaveStorageService } from '@/lib/storage/arweave-service'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 
 /**
  * POST /api/documents/[documentId]/ai-analysis
@@ -111,29 +108,59 @@ export async function POST(
 
       try {
         // STEP 1: Mint NFT (government digital seal)
-        console.log('🎖️ Step 1: Minting NFT...')
-        const nftResult = await nftMintingService.mintGovernmentSeal(
-          documentId,
+        console.log('🎖️ Step 1: Minting NFT via SolanaService...')
+
+        const nftMetadata = {
+          name: `Government Digital Seal - ${document.type}`,
+          symbol: 'NDDV',
+          description: `Official government verification for ${document.type}`,
+          image: 'https://your-domain.com/government-seal.png',
+          attributes: [
+            { trait_type: 'Document Type', value: document.type.toString() },
+            { trait_type: 'Verified', value: 'true' },
+            { trait_type: 'Blockchain', value: 'Solana' },
+            { trait_type: 'Government Backed', value: 'true' },
+          ]
+        }
+
+        const govAddress = process.env.GOVERNMENT_WALLET_ADDRESS
+        if (!govAddress) throw new Error('GOVERNMENT_WALLET_ADDRESS is not configured')
+
+        const nftResult = await solanaService.mintNFT(
+          nftMetadata,
           document.user.walletAddress,
-          document.type.toString(),
-          '', // documentHash from Arweave
+          govAddress
         )
 
+        // Update DB with NFT address (Business Logic)
+        await prisma.document.update({
+          where: { id: documentId },
+          data: {
+            nftMintAddress: nftResult.mintAddress,
+            updatedAt: new Date()
+          }
+        })
+
         // STEP 2: Create SAS attestation
-        console.log('📝 Step 2: Creating SAS attestation...')
-        const attestationResult = await sasAttestationService.createAttestation(
-          documentId,
-          document.user.walletAddress,
+        console.log('📝 Step 2: Creating SAS attestation via SolanaService...')
+        const attestationResult = await solanaService.createAttestation(
+          'schema_document_verification',
           {
             documentType: document.type.toString(),
             documentHash: '',
             citizenWallet: document.user.walletAddress,
-            governmentIssuer: process.env.GOVERNMENT_WALLET_ADDRESS!,
-            issuedAt: new Date(),
             authenticityScore: compositeScore,
             deepfakeRisk: fraudDetection.deepfakeScore > 60 ? 'HIGH' : 'LOW',
           },
+          govAddress,
+          document.user.walletAddress
         )
+
+        // Update DB with Attestation ID (Business Logic)
+        await prisma.document.update({
+          where: { id: documentId },
+          data: { attestationId: attestationResult.attestationId }
+        })
 
         // STEP 3: Store on Arweave (permanent)
         console.log('📦 Step 3: Storing on Arweave...')
@@ -150,7 +177,7 @@ export async function POST(
         )
 
         console.log('✅ Blockchain integration complete!')
-        console.log(`📌 NFT: ${nftResult.nftMintAddress}`)
+        console.log(`📌 NFT: ${nftResult.mintAddress}`)
         console.log(`📝 Attestation: ${attestationResult.attestationId}`)
         console.log(`📦 Arweave: ${arweaveResult.permanentUrl}`)
 

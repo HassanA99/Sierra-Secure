@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { AuthService } from '@/services/implementations/auth.service'
-import { sign } from 'jsonwebtoken'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/prisma/client'
 const authService = new AuthService(prisma)
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production'
+import { sanitizeUserForClient } from '@/lib/serializers/user'
 
 /**
  * POST /api/auth/login
@@ -85,20 +82,14 @@ async function handleLogin(request: NextRequest) {
 
     // Generate JWT token for session
     const token = sign(
-      { userId: user.id, email: user.email, walletAddress: user.walletAddress },
+      { userId: user.id, email: typeof user.email === 'string' ? user.email : user.email?.address, walletAddress: user.walletAddress },
       JWT_SECRET,
       { expiresIn: '24h' }
     )
 
     return NextResponse.json(
       {
-        user: {
-          id: user.id,
-          email: user.email,
-          walletAddress: user.walletAddress,
-          displayName: user.displayName,
-          kycStatus: user.kycStatus,
-        },
+        user: sanitizeUserForClient(user),
         token,
       },
       { status: 200 }
@@ -157,12 +148,7 @@ async function handleVerify(request: NextRequest) {
 
     return NextResponse.json(
       {
-        user: {
-          id: user.id,
-          email: user.email,
-          walletAddress: user.walletAddress,
-          displayName: user.displayName,
-        },
+        user: sanitizeUserForClient(user),
         token,
       },
       { status: 200 }
